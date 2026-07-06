@@ -1,9 +1,37 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import Dashboard from './components/Dashboard'
 import VehicleList from './components/VehicleList'
 import Inspection from './components/Inspection'
 import Report from './components/Report'
-import { vehicles as mockVehicles } from './mockData'
+import BookingsList from './components/BookingsList'
+import BookingDetail from './components/BookingDetail'
+import AddBooking from './components/AddBooking'
+import { vehicles as mockVehicles, mockBookings } from './mockData'
+
+const STORAGE_KEY = 'fleetinspect_bookings'
+const DATA_VERSION_KEY = 'fleetinspect_data_version'
+const CURRENT_VERSION = '2' // bump this when mock data schema changes
+
+function loadBookings() {
+  try {
+    const version = localStorage.getItem(DATA_VERSION_KEY)
+    if (version === CURRENT_VERSION) {
+      const stored = localStorage.getItem(STORAGE_KEY)
+      if (stored) return JSON.parse(stored)
+    } else {
+      // Clear stale data from old schema
+      localStorage.removeItem(STORAGE_KEY)
+      localStorage.setItem(DATA_VERSION_KEY, CURRENT_VERSION)
+    }
+  } catch (e) { /* ignore */ }
+  return mockBookings
+}
+
+function saveBookings(bookings) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(bookings))
+  } catch (e) { /* localStorage full — ignore */ }
+}
 
 export default function App() {
   const [vehicles] = useState(mockVehicles)
@@ -11,6 +39,13 @@ export default function App() {
   const [selectedVehicle, setSelectedVehicle] = useState(null)
   const [inspections, setInspections] = useState([])
   const [currentReport, setCurrentReport] = useState(null)
+  const [bookings, setBookings] = useState(loadBookings)
+  const [selectedBooking, setSelectedBooking] = useState(null)
+
+  // Persist bookings to localStorage whenever they change
+  useEffect(() => {
+    saveBookings(bookings)
+  }, [bookings])
 
   function startInspection(vehicle) {
     setSelectedVehicle(vehicle)
@@ -22,6 +57,34 @@ export default function App() {
     setCurrentReport(report)
     setView('report')
   }
+
+  function openBooking(booking) {
+    setSelectedBooking(booking)
+    setView('bookingDetail')
+  }
+
+  function updateBooking(updated) {
+    setBookings(prev => prev.map(b => b.id === updated.id ? updated : b))
+    setSelectedBooking(updated)
+  }
+
+  function addBooking(newBooking) {
+    setBookings(prev => [newBooking, ...prev])
+    setView('bookings')
+  }
+
+  function markReturned(bookingId) {
+    const updated = bookings.map(b =>
+      b.id === bookingId ? { ...b, status: 'Returned' } : b
+    )
+    setBookings(updated)
+    // Also update selectedBooking if we're viewing it
+    if (selectedBooking && selectedBooking.id === bookingId) {
+      setSelectedBooking({ ...selectedBooking, status: 'Returned' })
+    }
+  }
+
+  const isBookingView = view === 'bookings' || view === 'bookingDetail' || view === 'addBooking'
 
   return (
     <div className="min-h-screen text-slate-900">
@@ -37,6 +100,7 @@ export default function App() {
             <div className="flex flex-wrap items-center gap-2">
               <button onClick={()=>setView('dashboard')} className={`rounded-full px-4 py-2 text-sm transition ${view==='dashboard' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>Dashboard</button>
               <button onClick={()=>setView('vehicles')} className={`rounded-full px-4 py-2 text-sm transition ${view==='vehicles' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>Vehicles</button>
+              <button onClick={()=>setView('bookings')} className={`rounded-full px-4 py-2 text-sm transition ${isBookingView ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>Bookings</button>
               <div className="ml-2 rounded-full bg-indigo-50 px-4 py-2 text-sm text-indigo-700">Operator: Alex Morgan</div>
             </div>
           </div>
@@ -44,7 +108,7 @@ export default function App() {
 
         <main>
           {view === 'dashboard' && (
-            <Dashboard vehicles={vehicles} inspections={inspections} onInspect={startInspection} />
+            <Dashboard vehicles={vehicles} inspections={inspections} bookings={bookings} onInspect={startInspection} />
           )}
 
           {view === 'vehicles' && (
@@ -57,6 +121,23 @@ export default function App() {
 
           {view === 'report' && currentReport && (
             <Report report={currentReport} onBack={()=>setView('dashboard')} />
+          )}
+
+          {view === 'bookings' && (
+            <BookingsList
+              bookings={bookings}
+              onOpenBooking={openBooking}
+              onAddBooking={() => setView('addBooking')}
+              onMarkReturned={markReturned}
+            />
+          )}
+
+          {view === 'addBooking' && (
+            <AddBooking onSave={addBooking} onCancel={() => setView('bookings')} />
+          )}
+
+          {view === 'bookingDetail' && selectedBooking && (
+            <BookingDetail booking={selectedBooking} onBack={()=>setView('bookings')} onUpdateBooking={updateBooking} onMarkReturned={markReturned} />
           )}
         </main>
       </div>
